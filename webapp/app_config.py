@@ -1,3 +1,3 @@
 import os
 
-TEST_SECRET = os.environ["TEST_SECRET"]
+#Insert here app secrets
