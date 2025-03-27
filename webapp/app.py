@@ -4,7 +4,7 @@ app = flask.Flask(__name__, template_folder = "template_files", static_folder = 
 
 @app.route('/', methods = ["GET", "POST"])
 def index():
-    return flask.render_template('index.html', test_value = app_config.TEST_SECRET)
+    return flask.render_template('index.html')
 
 
 if __name__ == "__main__":
