@@ -5,14 +5,14 @@
             <div class = "d-grid gap-2 text-center" style = "width: 600px;">
                 <h1 id = "website-name">Crator-Web</h1>
 
-                <form class = "row align-items-center" style = "margin: 0;">
+                <div class = "row align-items-center" style = "margin: 0;">
                     <div class="col-10 p-1">
-                        <input class = "webapp-searchbar form-control w-100" type = "search" placeholder = "Paste here a root URL for start crawling" aria-label="Search">
+                        <input id = "start-url" class = "webapp-searchbar form-control w-100" type = "search" placeholder = "Paste here a root URL for start crawling" aria-label="Search">
                     </div>
                     <div class="col-2 p-1">
-                        <button class = "webapp-button btn w-100" type = "submit">Search</button>
+                        <button id = "continue-button" class = "webapp-button btn w-100" type = "submit" data-bs-toggle = "modal" data-bs-target = "#features-modal">Continue</button>
                     </div>
-                </form>
+                </div>
 
                 <div class = "d-flex justify-content-center">
                     <button class = "webapp-button btn m-1 w-25" type = "submit">Button 1</button>
@@ -28,4 +28,52 @@
         </div>
         <a class = "footer-item px-2">© 2025 Crator-Web, adriano22_</a>
     </footer>
+
+
+
+    <div class = "modal fade" id = "features-modal" tabindex = "-1" aria-labelledby = "features-modal-label" aria-hidden = "true">
+        <div class = "modal-dialog">
+            <div class = "modal-content">
+                <div class = "modal-header">
+                    <h5 class = "modal-title" id = "features-modal-label">Select crawling settings</h5>
+                    <button type = "button" class = "btn-close btn-close-white" data-bs-dismiss = "modal" aria-label = "Close"></button>
+                </div>
+                <div class = "modal-body">
+                    <form action = "/setup-crawl" method = "POST">
+                        <input type = "hidden" id = "hidden-start-url" name = "start-url">
+
+                        <div class = "mb-2 d-flex align-items-center">
+                            <label for = "crawler-depth" class = "form-label me-2 mb-0">Crawler Depth</label>
+                            <select id = "crawler-depth" class = "form-select" name = "crawler-depth" style = "width: auto;">
+                                <option value = "1">1</option>
+                                <option value = "2">2</option>
+                                <option value = "3">3</option>
+                                <option value = "4">4</option>
+                                <option value = "5">5</option>
+                            </select>
+                        </div>
+                    
+                        <div class = "mb-2 d-flex align-items-center">
+                            <label for = "max-links" class = "form-label me-2 mb-0">Max Links</label>
+                            <input type = "number" id = "max-links" class = "form-control" name = "max-links" style = "width: 100px;" min = "1" value = "1">
+                        </div>
+                    
+                        <div class = "mb-2 d-flex align-items-center">
+                            <label for = "max-execution-time" class = "form-label me-2 mb-0" >Max Execution Time (s)</label>
+                            <input type = "number" id = "max-execution-time" class = "form-control" name = "max-execution-time" style = "width: 100px;" min = "1" value = "1">
+                        </div>
+                    
+                        <div class = "mb-2 d-flex align-items-center">
+                            <label for = "concurrent-workers" class = "form-label me-2 mb-0">Concurrent Workers</label>
+                            <input type = "number" id = "concurrent-workers" class = "form-control" name = "concurrent-workers" style = "width: 100px;" min = "1" max = "10" value = "1">
+                        </div>
+
+                        <div class = "d-flex align-items-center text-center">
+                            <button id = "start-crawling-button" class = "webapp-button btn w-100" type = "submit">Start Crawling</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}

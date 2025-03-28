@@ -38,6 +38,27 @@ body {
     border: 1px solid lightgrey !important;
 }
 
+.btn-close, .form-select, .form-control {
+    box-shadow: none !important;
+}
+
+.form-select, .form-control {
+    border: 1px solid lightgray !important;
+}
+
+.modal-header {
+    background-color: #7D4698 !important;
+}
+
+.modal-title {
+    font-size: 20px !important; 
+    color: #F8F9FA !important;
+}
+
+.modal-body {
+    background-color: #F8F9FA !important;
+}
+
 footer {
     height: 45px;
     background-color: #7D4698;
