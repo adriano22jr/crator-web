@@ -1,3 +1,3 @@
 import os
 
-#Insert here app secrets
+# Insert here web-app secrets
