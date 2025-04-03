@@ -67,11 +67,12 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
         # First message goes in queue-0 and init message in queue-init
         queue_client = queue_service.get_queue_client(f"{QUEUE_PREFIX}0")
         first_message = json.dumps({"url": root_url, "depth": 0})
-        queue_client.send_message(first_message)
+        queue_client.send_message(first_message, visibility_timeout = 2)
         logging.info(f"Inserted root URL into queue-0: {root_url}")
         
         queue_client = queue_service.get_queue_client("queue-init")
-        first_message = json.dumps({"init_message": "init"})
+        init_message = json.dumps({"init": "start"})
+        queue_client.send_message(init_message, visibility_timeout = 5)
         logging.info(f"Inserted init message into queue-init.")
         
         return func.HttpResponse("Setup completed successfully!", status_code = 200)
@@ -97,7 +98,7 @@ def crawling_clean(req: func.HttpRequest) -> func.HttpResponse:
 
         queue_service = QueueServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
         
-        logging.info(f"Deleteing queues...")
+        logging.info(f"Deleting queues...")
         for i in range(max_depth + 1):
             queue_name = f"{QUEUE_PREFIX}{i}"
             logging.info(f"Eliminazione della coda: {queue_name}")
@@ -113,7 +114,6 @@ def crawling_clean(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"Errore: {str(e)}")
         return func.HttpResponse(f"Error: {str(e)}", status_code = 500)
-
 
 
 @app.queue_trigger(arg_name = "azqueue", queue_name = "queue-init", connection = "AzureWebJobsStorage", ) 
@@ -134,7 +134,7 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
 @app.orchestration_trigger(context_name = "context")
 def orchestrator_function(context: df.DurableOrchestrationContext):
     try:
-        instance_id = context.instance_id  # ID univoco della sessione dell'orchestratore
+        instance_id = context.instance_id
         logging.info(f"Starting orchestrator {instance_id}...")
 
         input_data = context.get_input()
@@ -191,20 +191,13 @@ def queue_reader_function(inputdata: dict) -> list:
     
     
 @app.activity_trigger(input_name = "url")
-def url_processor_function(url: str) -> str:
-    try:
-        url_decoded = decode_base64(url)
-    except Exception as e:
-        logging.error(f"Failed to decode URL: {str(e)}")
-        return "Error decoding URL"
-    
-    logging.info(f"Processing URL: {url_decoded}")
-    
-    return f"Processed {url_decoded}"
+def url_processor_function(url: str) -> str:    
+    decoded_url = decode_base64(url)
+    logging.info(f"Processing URL: {decoded_url.decode('utf-8')}")
+    return f"Processed {decoded_url.decode('utf-8')}"
 
-
-def decode_base64(base64_string):
-    padding = '=' * (4 - len(base64_string) % 4)
-    base64_string += padding
-    decoded_bytes = base64.b64decode(base64_string)
-    return decoded_bytes.decode('utf-8')
+def decode_base64(data):
+    missing_padding = len(data) % 4
+    if missing_padding:
+        data += '=' * (4 - missing_padding)
+    return base64.b64decode(data)
