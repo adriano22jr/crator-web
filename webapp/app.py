@@ -1,13 +1,15 @@
-import flask, requests, app_config
+import flask, requests, app_config, json, os
 
 app = flask.Flask(__name__, template_folder = "template_files", static_folder = "static_files")
+
+
+FUNCTION_APP_HOSTNAME = os.getenv("functionapp_hostname")
 
 @app.route('/', methods = ["GET", "POST"])
 def index():
     return flask.render_template('index.html')
 
 
-# TODO: change this to an azure functions-call, and verify the correctness of the azure-function step for the crawling setup.
 @app.route('/setup-crawl', methods = ["GET", "POST"])
 def setup_crawl():
     crawler_depth = flask.request.form["crawler-depth"]
@@ -16,10 +18,22 @@ def setup_crawl():
     concurrent_workers = flask.request.form["concurrent-workers"]
     start_url = flask.request.form["start-url"]
     
-    text = f"{crawler_depth}, {max_links}, {max_exec_time}, {concurrent_workers}, {start_url}"
-    response = flask.make_response(text, 200)
-    response.mimetype = "text/plain"
-    return response
+    
+    function_url = f"https://{FUNCTION_APP_HOSTNAME}/api/crawling_setup?code=gmv-M9j3bjoXCseX09yuAOV6TYk7l_jViQUeKTR_jUjHAzFuzd-PXQ%3D%3D"
+    payload = {
+        "root_url": start_url,
+        "max_workers": concurrent_workers,
+        "max_depth": crawler_depth,
+        "max-links": max_links,
+        "max-execution-time": max_exec_time
+    }
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(function_url, data = json.dumps(payload), headers = headers)
+    return response.text
 
 if __name__ == "__main__":
     app.run(port = 8080, debug = True)
