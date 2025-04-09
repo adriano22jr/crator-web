@@ -1,0 +1,6 @@
+SocksPort 0.0.0.0:9050
+Log notice stdout
+RunAsDaemon 0
+ExitRelay 0
+ControlPort 9051
+CookieAuthentication 0
