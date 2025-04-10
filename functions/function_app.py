@@ -7,7 +7,6 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-
 import logging, os, json, requests, hashlib
 
 app = df.DFApp(http_auth_level = func.AuthLevel.FUNCTION)
@@ -112,7 +111,6 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error in setup function: {str(e)}")
         return func.HttpResponse(f"Error: {str(e)}", status_code = 500)
     
-    
 @app.route(route = "crawling_clean")
 def crawling_clean(req: func.HttpRequest) -> func.HttpResponse:
     try:
@@ -146,10 +144,9 @@ def crawling_clean(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Errore: {str(e)}")
         return func.HttpResponse(f"Error: {str(e)}", status_code = 500)
 
-
 @app.queue_trigger(arg_name = "azqueue", queue_name = "queue-init", connection = "AzureWebJobsStorage", ) 
 @app.durable_client_input(client_name = "client")
-async def crawling_starter(azqueue: func.QueueMessage, client) -> None:    
+async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     table_service = TableServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
     config_table = table_service.get_table_client(TABLE_NAME)
     
@@ -167,7 +164,6 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     instance_id = await client.start_new("orchestrator_function", None, {"max_workers": max_workers, "max_depth": max_depth})
     logging.info(f"Launched orchestration with ID = '{instance_id}'.")
 
-
 @app.orchestration_trigger(context_name = "context")
 def orchestrator_function(context: df.DurableOrchestrationContext):
     try:
@@ -177,16 +173,16 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
         max_depth = input_data.get("max_depth")
         
         if not context.is_replaying:
-            logging.info(f"Starting orchestrator {instance_id}...")
-            logging.info(f"Max workers: {max_workers}, Max depth: {max_depth}")
+            logging.info(f"[ORCHESTRATOR {instance_id}]: Starting orchestrator {instance_id}...")
+            logging.info(f"[ORCHESTRATOR {instance_id}]: Max workers: {max_workers}, Max depth: {max_depth}")
             
         if not context.is_replaying:
-            logging.info(f"[Orchestrator {instance_id}]: setup_crawling_env completed.")
+            logging.info(f"[ORCHESTRATOR {instance_id}]: setup_crawling_env completed.")
         
         queue_index = 0
         while queue_index <= max_depth:
             if not context.is_replaying:
-                logging.info(f"Processing queue: {queue_index}")
+                logging.info(f"[ORCHESTRATOR {instance_id}]: Processing queue: {queue_index}")
             
             retrieved_messages = yield context.call_activity("queue_reader_function", {
                 "index": queue_index,
@@ -194,11 +190,11 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
             })
             
             if not context.is_replaying:
-                logging.info(f"[Orchestrator {instance_id}]: got {retrieved_messages}")
-                logging.info((f"[Orchestrator {instance_id}]: retrieved {len(retrieved_messages)} URLs from queue {queue_index}. Processing..."))
+                logging.info(f"[ORCHESTRATOR {instance_id}]: got {retrieved_messages}")
+                logging.info((f"[ORCHESTRATOR {instance_id}]: retrieved {len(retrieved_messages)} URLs from queue {queue_index}. Processing..."))
             
             if len(retrieved_messages) == 0:
-                logging.info(f"[Orchestrator {instance_id}]: queue {queue_index} is empty. Skipping to next level.")
+                logging.info(f"[ORCHESTRATOR {instance_id}]: queue {queue_index} is empty. Skipping to next level.")
                 queue_index += 1
                 continue
                 
@@ -207,21 +203,21 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
             })
 
             if len(url_to_crawl) == 0:
-                logging.info(f"[Orchestrator {instance_id}]: no new URLs to process at level {queue_index}.")
+                logging.info(f"[ORCHESTRATOR {instance_id}]: no new URLs to process at level {queue_index}.")
                 queue_index += 1
                 continue
             
             if not context.is_replaying:
-                logging.info(f"[Orchestrator {instance_id}]: launching url_processor_function workers for {len(url_to_crawl)} URLs...")            
+                logging.info(f"[ORCHESTRATOR {instance_id}]: launching url_processor_function workers for {len(url_to_crawl)} URLs...")            
         
             try:
                 crawl_tasks = [context.call_activity("url_processor_function", msg) for msg in url_to_crawl]
                 crawl_results = yield context.task_all(crawl_tasks)
                 
                 if not context.is_replaying:
-                    logging.info(f"[Orchestrator {instance_id}]: crawl results received.")
+                    logging.info(f"[ORCHESTRATOR {instance_id}]: crawl results received.")
             except Exception as e:
-                logging.error(f"[Orchestrator {instance_id}]: error in processing URLs: {str(e)}")
+                logging.error(f"[ORCHESTRATOR {instance_id}]: error in processing URLs: {str(e)}")
                 raise
             
             has_failures = yield context.call_activity("postprocess_results", {
@@ -232,11 +228,11 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
 
             if has_failures:
                 if not context.is_replaying:
-                    logging.info(f"[Orchestrator {instance_id}]: retry needed at queue {queue_index} due to failures.")
+                    logging.info(f"[ORCHESTRATOR {instance_id}]: retry needed at queue {queue_index} due to failures.")
                 
         logging.info("Orchestration complete.")
     except Exception as e:
-        logging.error(f"Orchestrator {instance_id} - ERROR: {str(e)}")
+        logging.error(f"ORCHESTRATOR {instance_id} - ERROR: {str(e)}")
         raise
     
 @app.activity_trigger(input_name = "inputdata")
@@ -255,7 +251,7 @@ def filter_urls(inputdata):
 
 @app.activity_trigger(input_name = "inputdata")
 def postprocess_results(inputdata):
-    logging.info("Postprocessing results...")
+    logging.info("[POST-PROCESS ACTIVITY]: Postprocessing results...")
     
     crawl_results = inputdata["results"]
     depth = inputdata["depth"]
@@ -273,18 +269,19 @@ def postprocess_results(inputdata):
         if type(result) == list:
             for new_url in result:
                 if depth + 1 > max_depth:
-                    logging.info("Max depth reached. Not inserting further URLs.")
+                    logging.info("[POST-PROCESS ACTIVITY]: Max depth reached. Not inserting further URLs.")
                     continue
                 
                 check = url_check(new_url)
-                if check == False:
+                if check == False or check == True:
+                    logging.info(f"[POST-PROCESS ACTIVITY]: URL {new_url} already exists in the database. Skipping...")
                     continue
-                elif check == None or check == True:
+                else:
                     queue_client.send_message(
                         json.dumps({"url": new_url, "depth": depth + 1}),
                         visibility_timeout = 1
                     )
-                    logging.info(f"Inserted URL into queue {queue_name}: {new_url}")
+                    logging.info(f"[POST-PROCESS ACTIVITY]: Inserted URL into queue {queue_name}: {new_url}")
                     url_insert(new_url)
         else:
             update_fail(result)
@@ -301,22 +298,22 @@ def queue_reader_function(inputdata: dict) -> list:
     queue_service = QueueServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
     queue_client = queue_service.get_queue_client(queue_name)
     
-    logging.info(f"Looking for messages from queue: {queue_name}")
+    logging.info(f"[QUEUE-READER ACTIVITY]: Looking for messages from queue: {queue_name}")
     messages = list(queue_client.receive_messages(max_messages = max_workers))
     
     if messages:
-        logging.info(f"Received {len(messages)} messages from queue {queue_name}.")
+        logging.info(f"[QUEUE-READER ACTIVITY]: Received {len(messages)} messages from queue {queue_name}.")
         urls = [msg.content for msg in messages]
         for msg in messages:
             queue_client.delete_message(msg)
         return urls
     else:
-        logging.info(f"No messages found in queue {queue_name}.")
+        logging.info(f"[QUEUE-READER ACTIVITY]: No messages found in queue {queue_name}.")
         return []
      
 @app.activity_trigger(input_name = "message")
-def url_processor_function(message: str) -> str:    
-    logging.info(f"Processing URL: {message}")
+def url_processor_function(message: str) -> str:
+    logging.info(f"[URL-CRAWLER ACTIVITY]: Processing URL: {message}")
     
     data = json.loads(message)
     url = data.get("url")
@@ -332,54 +329,53 @@ def url_processor_function(message: str) -> str:
     }
 
     try:
-        logging.info(f"Scraping url: {url}")
+        logging.info(f"[URL-CRAWLER ACTIVITY]: Scraping url: {url}")
         response = requests.get(url, proxies = local_proxy)
-        logging.info(f"Successfully got a response from TOR server.")
+        logging.info(f"[URL-CRAWLER ACTIVITY]: Successfully got a response from TOR server.")
         
         update_crawled(url)
-        logging.info(f"Uploading HTML content to storage...")
+        logging.info(f"[URL-CRAWLER ACTIVITY]: Uploading HTML content to storage...")
         upload_html("cocoriko-market", f"{hashlib.sha256(url.encode('utf-8')).hexdigest()}.html", response.text, "crawling-results")
         
         extracted_links = extract_internal_links(response)
-        logging.info(f"Found {len(extracted_links)} internal links.")
+        logging.info(f"[URL-CRAWLER ACTIVITY]: Found {len(extracted_links)} internal links.")
         
         return extracted_links
     except Exception as e:
         return url
         
-        
 def setup_url_database(db_name: str = "url_db", collection_name: str = "urls"):
     try:
         mongo_client.admin.command("ping")
-        logging.info(f"Connected to CosmosDB.")
+        logging.info(f"[URL-DB SETUP]: Connected to CosmosDB.")
 
         db = mongo_client[db_name]
         collection = db[collection_name]
         
     except ConnectionFailure:
-        logging.info("CosmosDB connection failed.")
+        logging.info("[URL-DB SETUP]: CosmosDB connection failed.")
     except OperationFailure as e:
-        logging.info(f"Error: {e}")
+        logging.info(f"[URL-DB SETUP]: Error: {e}")
         
 def create_storage_container(container_name: str):
     try:
-        logging.info(f"Connecting to storage container...")
+        logging.info(f"[STORAGE SETUP]: Connecting to storage container...")
         blob_service_client = BlobServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
         container_client = blob_service_client.get_container_client(container_name)
         
         if not container_client.exists():
-            logging.info(f"Creating container: {container_name}")
+            logging.info(f"[STORAGE SETUP]: Creating container: {container_name}")
             container_client.create_container()
     except Exception as e:
-        logging.error(f"Error creating container: {str(e)}")
+        logging.error(f"[STORAGE SETUP]: Error creating container: {str(e)}")
         raise
     
 def upload_html(domain, page_name, content, container_name: str):
-    logging.info(f"Connecting to storage container...")
+    logging.info(f"[UPLOAD HTML]: Connecting to storage container...")
     blob_service_client = BlobServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
     container_client = blob_service_client.get_container_client(container_name)
         
-    logging.info(f"Uploading HTML content to {container_name}...")
+    logging.info(f"[UPLOAD HTML]: Uploading HTML content to {container_name}...")
     blob_path = f"{domain}/{page_name}"
     blob_client = container_client.get_blob_client(blob_path)
     blob_client.upload_blob(content, overwrite = True)
@@ -391,29 +387,30 @@ def url_check(url: str, db_name: str = "url_db", collection_name: str = "urls"):
 
         existing_url = collection.find_one({"url": url})
         if existing_url:
-            logging.info(f"URL {url} already exists in the database, checking if it is already crawled...")
+            logging.info(f"[URL CHECK]: URL {url} already exists in the database, checking if it is already crawled...")
             if existing_url.get("crawled"):
-                logging.info(f"URL {url} has already been crawled.")
+                logging.info(f"[URL CHECK]: URL {url} has already been crawled.")
                 return False
             else:
-                logging.info(f"URL {url} exists but has not been crawled yet.")
+                logging.info(f"[URL CHECK]: URL {url} exists but has not been crawled yet.")
                 return True
+        return None
     except ConnectionFailure:
-        logging.info("CosmosDB connection failed.")
+        logging.info("[URL CHECK]: CosmosDB connection failed.")
     except OperationFailure as e:
-        logging.info(f"Error: {e}")
+        logging.info(f"[URL CHECK]: Error: {e}")
         
 def url_insert(url: str, db_name: str = "url_db", collection_name: str = "urls"):
     try:
         db = mongo_client[db_name]
         collection = db[collection_name]
 
-        logging.info(f"URL {url} does not exist in the database, creating entry...")
+        logging.info(f"[URL INSERT]: URL {url} does not exist in the database, creating entry...")
         collection.insert_one({"url": url, "crawled": False})
     except ConnectionFailure:
-        logging.info("CosmosDB connection failed.")
+        logging.info("[URL INSERT]: CosmosDB connection failed.")
     except OperationFailure as e:
-        logging.info(f"Error: {e}")
+        logging.info(f"[URL INSERT]: Error: {e}")
         
 def update_crawled(url: str, db_name: str = "url_db", collection_name: str = "urls"):
     try:
@@ -422,13 +419,13 @@ def update_crawled(url: str, db_name: str = "url_db", collection_name: str = "ur
 
         existing_url = collection.find_one({"url": url})
         if existing_url:
-            logging.info(f"Updating status for {url}...")
+            logging.info(f"[URL UPDATE]: Updating status for {url}...")
             collection.update_one({"url": url}, {"$set": {"crawled": True}})
     
     except ConnectionFailure:
-        logging.info("CosmosDB connection failed.")
+        logging.info("[URL UPDATE]: CosmosDB connection failed.")
     except OperationFailure as e:
-        logging.info(f"Error: {e}")
+        logging.info(f"[URL UPDATE]: Error: {e}")
         
 def update_fail(url: str, db_name: str = "url_db", collection_name: str = "urls"):
     try:
@@ -437,17 +434,17 @@ def update_fail(url: str, db_name: str = "url_db", collection_name: str = "urls"
 
         existing_url = collection.find_one({"url": url})
         if existing_url:
-            logging.info(f"Updating status for {url}...")
+            logging.info(f"[URL FAIL]: Updating status for {url}...")
             collection.update_one({"url": url}, {"$set": {"crawled": False}})
     
     except ConnectionFailure:
-        logging.info("CosmosDB connection failed.")
+        logging.info("[URL FAIL]: CosmosDB connection failed.")
     except OperationFailure as e:
-        logging.info(f"Error: {e}")
+        logging.info(f"[URL FAIL]: Error: {e}")
         
 def extract_internal_links(web_page: str):
     request_url = web_page.request.url
-    logging.info(f"Extracting internal links...")
+    logging.info(f"[LINKS EXTRACTION]: Extracting internal links...")
     domain = urlparse(request_url).netloc
 
     soup = BeautifulSoup(web_page.content, "html.parser", from_encoding = "iso-8859-1")
