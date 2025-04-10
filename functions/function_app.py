@@ -101,8 +101,8 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
         logging.info(f"Inserted root URL into queue-0: {root_url}")
         
         queue_client = queue_service.get_queue_client("queue-init")
-        init_message = json.dumps({"init": "start"})
-        queue_client.send_message(init_message, visibility_timeout = 5)
+        init_message = json.dumps(root_url)
+        queue_client.send_message(init_message, visibility_timeout = 2)
         logging.info(f"Inserted init message into queue-init.")
         
         return func.HttpResponse("Setup completed successfully!", status_code = 200)
@@ -158,7 +158,7 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     create_storage_container("crawling-results")
     
     decoded_message = azqueue.get_body().decode("utf-8")
-    url_insert(decoded_message)
+    url_insert(decoded_message, 0)
 
     logging.info(f"Starting orchestration with {max_workers} workers.")
     instance_id = await client.start_new("orchestrator_function", None, {"max_workers": max_workers, "max_depth": max_depth})
@@ -282,7 +282,7 @@ def postprocess_results(inputdata):
                         visibility_timeout = 1
                     )
                     logging.info(f"[POST-PROCESS ACTIVITY]: Inserted URL into queue {queue_name}: {new_url}")
-                    url_insert(new_url)
+                    url_insert(new_url, depth + 1)
         else:
             update_fail(result)
             has_failures = True
@@ -317,6 +317,7 @@ def url_processor_function(message: str) -> str:
     
     data = json.loads(message)
     url = data.get("url")
+    depth = data.get("depth")
     
     local_proxy = {
         'http': 'socks5h://localhost:9050',
@@ -335,7 +336,7 @@ def url_processor_function(message: str) -> str:
         
         update_crawled(url)
         logging.info(f"[URL-CRAWLER ACTIVITY]: Uploading HTML content to storage...")
-        upload_html("cocoriko-market", f"{hashlib.sha256(url.encode('utf-8')).hexdigest()}.html", response.text, "crawling-results")
+        upload_html("cocoriko-market", f"level-{depth}/{hashlib.sha256(url.encode('utf-8')).hexdigest()}.html", response.text, "crawling-results")
         
         extracted_links = extract_internal_links(response)
         logging.info(f"[URL-CRAWLER ACTIVITY]: Found {len(extracted_links)} internal links.")
@@ -400,13 +401,13 @@ def url_check(url: str, db_name: str = "url_db", collection_name: str = "urls"):
     except OperationFailure as e:
         logging.info(f"[URL CHECK]: Error: {e}")
         
-def url_insert(url: str, db_name: str = "url_db", collection_name: str = "urls"):
+def url_insert(url: str, depth: int, db_name: str = "url_db", collection_name: str = "urls"):
     try:
         db = mongo_client[db_name]
         collection = db[collection_name]
 
         logging.info(f"[URL INSERT]: URL {url} does not exist in the database, creating entry...")
-        collection.insert_one({"url": url, "crawled": False})
+        collection.insert_one({"url": url, "depth": depth, "crawled": False})
     except ConnectionFailure:
         logging.info("[URL INSERT]: CosmosDB connection failed.")
     except OperationFailure as e:
