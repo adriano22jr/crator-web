@@ -7,7 +7,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import logging, os, json, requests, hashlib
+import logging, os, json, requests, hashlib, datetime, time
 
 app = df.DFApp(http_auth_level = func.AuthLevel.FUNCTION)
 
@@ -153,6 +153,8 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     entity = config_table.get_entity(partition_key = "Config", row_key = "GlobalSettings")
     max_workers = int(entity["max_workers"])
     max_depth = int(entity["max_depth"])
+    max_exec_time = int(entity["max_exec_time"])
+    max_links = int(entity["max_links"])
     
     setup_url_database()
     create_storage_container("crawling-results")
@@ -161,7 +163,7 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     url_insert(decoded_message, 0)
 
     logging.info(f"Starting orchestration with {max_workers} workers.")
-    instance_id = await client.start_new("orchestrator_function", None, {"max_workers": max_workers, "max_depth": max_depth})
+    instance_id = await client.start_new("orchestrator_function", None, {"start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(), "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_exec_time": max_exec_time, "max_links": max_links})
     logging.info(f"Launched orchestration with ID = '{instance_id}'.")
 
 @app.orchestration_trigger(context_name = "context")
@@ -171,16 +173,33 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
         input_data = context.get_input()
         max_workers = input_data.get("max_workers")
         max_depth = input_data.get("max_depth")
+        max_exec_time = input_data.get("max_exec_time")
+        max_links = input_data.get("max_links")
+        
+        # start_time_str = input_data.get("start_time")
+        # start_time = datetime.datetime.fromisoformat(start_time_str)
+        
+        counter = input_data.get("counter", 0)
         
         if not context.is_replaying:
             logging.info(f"[ORCHESTRATOR {instance_id}]: Starting orchestrator {instance_id}...")
-            logging.info(f"[ORCHESTRATOR {instance_id}]: Max workers: {max_workers}, Max depth: {max_depth}")
+            logging.info(f"[ORCHESTRATOR {instance_id}]: Info received from config table: max_workers: {max_workers}, max_depth: {max_depth}, max_exec_time: {max_exec_time}, max_links: {max_links}")
             
         if not context.is_replaying:
             logging.info(f"[ORCHESTRATOR {instance_id}]: setup_crawling_env completed.")
         
         queue_index = 0
         while queue_index <= max_depth:
+            # current_time = context.current_utc_datetime
+            # elapsed_time = (current_time - start_time).total_seconds()
+            # if elapsed_time > max_exec_time:
+                # logging.warning(f"[ORCHESTRATOR {instance_id}]: Max execution time of {max_exec_time}s exceeded. Terminating orchestration.")
+                # break
+            
+            if counter >= max_links:
+                logging.warning(f"[ORCHESTRATOR {instance_id}]: Max links limit of {max_links} reached. Current count: {counter}. Terminating orchestration.")
+                break
+            
             if not context.is_replaying:
                 logging.info(f"[ORCHESTRATOR {instance_id}]: Processing queue: {queue_index}")
             
@@ -207,11 +226,17 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
                 queue_index += 1
                 continue
             
+            remaining_links = max_links - counter
+            if remaining_links <= 0:
+                logging.info(f"[ORCHESTRATOR {instance_id}]: Max links limit reached. No more URLs to process.")
+                break
+            
+            urls_to_process = url_to_crawl[:remaining_links]
             if not context.is_replaying:
-                logging.info(f"[ORCHESTRATOR {instance_id}]: launching url_processor_function workers for {len(url_to_crawl)} URLs...")            
+                logging.info(f"[ORCHESTRATOR {instance_id}]: launching url_processor_function workers for {len(url_to_crawl)} URLs... (Limited by max_links: {remaining_links} remaining)")            
         
             try:
-                crawl_tasks = [context.call_activity("url_processor_function", msg) for msg in url_to_crawl]
+                crawl_tasks = [context.call_activity("url_processor_function", msg) for msg in urls_to_process]
                 crawl_results = yield context.task_all(crawl_tasks)
                 
                 if not context.is_replaying:
@@ -220,16 +245,22 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
                 logging.error(f"[ORCHESTRATOR {instance_id}]: error in processing URLs: {str(e)}")
                 raise
             
-            has_failures = yield context.call_activity("postprocess_results", {
+            postprocess_result = yield context.call_activity("postprocess_results", {
                 "results": crawl_results,
                 "depth": queue_index,
-                "max_depth": max_depth
+                "max_depth": max_depth,
+                "current_counter": counter
             })
+            
+            has_failures = postprocess_result.get("has_failures")
+            counter = postprocess_result.get("updated_counter")
+            
+            if not context.is_replaying:
+                logging.info(f"[ORCHESTRATOR {instance_id}]: Updated counter to {counter}")
 
             if has_failures:
                 if not context.is_replaying:
                     logging.info(f"[ORCHESTRATOR {instance_id}]: retry needed at queue {queue_index} due to failures.")
-                
         logging.info("Orchestration complete.")
     except Exception as e:
         logging.error(f"ORCHESTRATOR {instance_id} - ERROR: {str(e)}")
@@ -256,6 +287,7 @@ def postprocess_results(inputdata):
     crawl_results = inputdata["results"]
     depth = inputdata["depth"]
     max_depth = inputdata["max_depth"]
+    current_counter = inputdata.get("current_counter")
     
     queue_name = f"{QUEUE_PREFIX}{depth + 1}"
     queue_client = QueueClient.from_connection_string(
@@ -265,8 +297,12 @@ def postprocess_results(inputdata):
     )
     
     has_failures = False
+    successfully_crawled = 0 
+    
     for result in crawl_results:
         if type(result) == list:
+            successfully_crawled += 1
+            
             for new_url in result:
                 if depth + 1 > max_depth:
                     logging.info("[POST-PROCESS ACTIVITY]: Max depth reached. Not inserting further URLs.")
@@ -286,7 +322,14 @@ def postprocess_results(inputdata):
         else:
             update_fail(result)
             has_failures = True
-    return has_failures
+            
+    updated_counter = current_counter + successfully_crawled
+    logging.info(f"[POST-PROCESS ACTIVITY]: Successfully crawled {successfully_crawled} URLs. Updated counter: {updated_counter}")
+    
+    return {
+        "has_failures": has_failures,
+        "updated_counter": updated_counter
+    }
     
 @app.activity_trigger(input_name = "inputdata")
 def queue_reader_function(inputdata: dict) -> list:

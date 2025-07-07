@@ -19,7 +19,8 @@ def setup_crawl():
     start_url = flask.request.form["start-url"]
     
     
-    function_url = f"https://{FUNCTION_APP_HOSTNAME}/api/crawling_setup?code=gmv-M9j3bjoXCseX09yuAOV6TYk7l_jViQUeKTR_jUjHAzFuzd-PXQ%3D%3D"
+    # function_url = f"https://{FUNCTION_APP_HOSTNAME}/api/crawling_setup?code=gmv-M9j3bjoXCseX09yuAOV6TYk7l_jViQUeKTR_jUjHAzFuzd-PXQ%3D%3D"
+    function_url = f"http://localhost:7071/api/crawling_setup"
     payload = {
         "root_url": start_url,
         "max_workers": concurrent_workers,
