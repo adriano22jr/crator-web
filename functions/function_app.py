@@ -229,7 +229,7 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
             try:
                 crawl_tasks = [context.call_activity("url_processor_function", msg) for msg in urls_to_process]
                 crawl_results = yield context.task_all(crawl_tasks)
-                
+
                 if not context.is_replaying:
                     logging.info(f"[ORCHESTRATOR {instance_id}]: crawl results received.")
             except Exception as e:
@@ -291,10 +291,13 @@ def postprocess_results(inputdata):
     successfully_crawled = 0 
     
     for result in crawl_results:
-        if type(result) == list:
+        if type(result) == dict:
+            extracted_links = result.get("extracted_links")
             successfully_crawled += 1
             
-            for new_url in result:
+            url_id = get_object_id(result.get("url"))
+            
+            for new_url in extracted_links:
                 if depth + 1 > max_depth:
                     logging.info("[POST-PROCESS ACTIVITY]: Max depth reached. Not inserting further URLs.")
                     continue
@@ -302,6 +305,8 @@ def postprocess_results(inputdata):
                 check = url_check(new_url)
                 if check == False or check == True:
                     logging.info(f"[POST-PROCESS ACTIVITY]: URL {new_url} already exists in the database. Skipping...")
+                    new_url_id = get_object_id(new_url)
+                    create_edge(url_id, str(new_url_id))
                     continue
                 else:
                     queue_client.send_message(
@@ -309,7 +314,9 @@ def postprocess_results(inputdata):
                         visibility_timeout = 1
                     )
                     logging.info(f"[POST-PROCESS ACTIVITY]: Inserted URL into queue {queue_name}: {new_url}")
-                    url_insert(new_url, depth + 1)
+                    inserted_url = url_insert(new_url, depth + 1)
+                    
+                    create_edge(url_id, str(inserted_url))
         else:
             update_fail(result)
             has_failures = True
@@ -379,7 +386,7 @@ def url_processor_function(message: str) -> str:
         extracted_links = extract_internal_links(response)
         logging.info(f"[URL-CRAWLER ACTIVITY]: Found {len(extracted_links)} internal links.")
         
-        return extracted_links
+        return {"url": url, "extracted_links": extracted_links}
     except Exception as e:
         logging.error(f"[URL-CRAWLER ACTIVITY]: Error processing URL {url}: {str(e)}")
         return url
@@ -440,6 +447,34 @@ def url_check(url: str, db_name: str = "url_db", collection_name: str = "urls"):
     except OperationFailure as e:
         logging.info(f"[URL CHECK]: Error: {e}")
         
+def get_object_id(url: str, db_name: str = "url_db", collection_name: str = "urls"):
+    try:
+        db = mongo_client[db_name]
+        collection = db[collection_name]
+
+        existing_url = collection.find_one({"url": url})
+        if existing_url:
+            return existing_url['identifier']
+    except ConnectionFailure:
+        logging.info("[OBJECT ID]: CosmosDB connection failed.")
+    except OperationFailure as e:
+        logging.info(f"[OBJECT ID]: Error: {e}")
+
+def create_edge(source_id: str, target_id: str, db_name: str = "url_db", collection_name: str = "edges"):
+    try:
+        db = mongo_client[db_name]
+        collection = db[collection_name]
+
+        collection.insert_one({
+            "source": source_id,
+            "target": target_id,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        })
+    except ConnectionFailure:
+        logging.info("[CREATE EDGE]: CosmosDB connection failed.")
+    except OperationFailure as e:
+        logging.info(f"[CREATE EDGE]: Error: {e}")
+
 def url_insert(url: str, depth: int, db_name: str = "url_db", collection_name: str = "urls"):
     try:
         db = mongo_client[db_name]
