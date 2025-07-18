@@ -176,9 +176,6 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
         max_exec_time = input_data.get("max_exec_time")
         max_links = input_data.get("max_links")
         
-        # start_time_str = input_data.get("start_time")
-        # start_time = datetime.datetime.fromisoformat(start_time_str)
-        
         counter = input_data.get("counter", 0)
         
         if not context.is_replaying:
@@ -189,13 +186,7 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
             logging.info(f"[ORCHESTRATOR {instance_id}]: setup_crawling_env completed.")
         
         queue_index = 0
-        while queue_index <= max_depth:
-            # current_time = context.current_utc_datetime
-            # elapsed_time = (current_time - start_time).total_seconds()
-            # if elapsed_time > max_exec_time:
-                # logging.warning(f"[ORCHESTRATOR {instance_id}]: Max execution time of {max_exec_time}s exceeded. Terminating orchestration.")
-                # break
-            
+        while queue_index <= max_depth:            
             if counter >= max_links:
                 logging.warning(f"[ORCHESTRATOR {instance_id}]: Max links limit of {max_links} reached. Current count: {counter}. Terminating orchestration.")
                 break
@@ -374,10 +365,14 @@ def url_processor_function(message: str) -> str:
 
     try:
         logging.info(f"[URL-CRAWLER ACTIVITY]: Scraping url: {url}")
+        
+        start_time = time.time()
+        start_time_db = datetime.datetime.now(datetime.timezone.utc).isoformat()
         response = requests.get(url, proxies = local_proxy)
         logging.info(f"[URL-CRAWLER ACTIVITY]: Successfully got a response from TOR server.")
+        elapsed_time = time.time() - start_time
         
-        update_crawled(url)
+        update_crawled(url, elapsed_time, start_time_db)
         logging.info(f"[URL-CRAWLER ACTIVITY]: Uploading HTML content to storage...")
         upload_html("cocoriko-market", f"level-{depth}/{hashlib.sha256(url.encode('utf-8')).hexdigest()}.html", response.text, "crawling-results")
         
@@ -386,6 +381,7 @@ def url_processor_function(message: str) -> str:
         
         return extracted_links
     except Exception as e:
+        logging.error(f"[URL-CRAWLER ACTIVITY]: Error processing URL {url}: {str(e)}")
         return url
         
 def setup_url_database(db_name: str = "url_db", collection_name: str = "urls"):
@@ -450,13 +446,31 @@ def url_insert(url: str, depth: int, db_name: str = "url_db", collection_name: s
         collection = db[collection_name]
 
         logging.info(f"[URL INSERT]: URL {url} does not exist in the database, creating entry...")
-        collection.insert_one({"url": url, "depth": depth, "crawled": False})
+        result = collection.insert_one({"url": url, 
+                               "depth": depth, 
+                               "crawled": False, 
+                               "hash_url": hashlib.sha256(url.encode('utf-8')).hexdigest(),
+                               "inserted_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                               "downloaded_at": None,
+                               "download_time": None,
+                               "identifier": None,
+                               "retries": 0
+                               })
+        
+        object_id = result.inserted_id
+        collection.update_one(
+            {"_id": object_id},
+            {"$set": {"identifier": str(object_id)}}
+        )
+
+        return object_id
+
     except ConnectionFailure:
         logging.info("[URL INSERT]: CosmosDB connection failed.")
     except OperationFailure as e:
         logging.info(f"[URL INSERT]: Error: {e}")
         
-def update_crawled(url: str, db_name: str = "url_db", collection_name: str = "urls"):
+def update_crawled(url: str, download_time, start_time, db_name: str = "url_db", collection_name: str = "urls"):
     try:
         db = mongo_client[db_name]
         collection = db[collection_name]
@@ -464,7 +478,7 @@ def update_crawled(url: str, db_name: str = "url_db", collection_name: str = "ur
         existing_url = collection.find_one({"url": url})
         if existing_url:
             logging.info(f"[URL UPDATE]: Updating status for {url}...")
-            collection.update_one({"url": url}, {"$set": {"crawled": True}})
+            collection.update_one({"url": url}, {"$set": {"crawled": True, "download_time": download_time, "downloaded_at": start_time}})
     
     except ConnectionFailure:
         logging.info("[URL UPDATE]: CosmosDB connection failed.")
@@ -479,7 +493,7 @@ def update_fail(url: str, db_name: str = "url_db", collection_name: str = "urls"
         existing_url = collection.find_one({"url": url})
         if existing_url:
             logging.info(f"[URL FAIL]: Updating status for {url}...")
-            collection.update_one({"url": url}, {"$set": {"crawled": False}})
+            collection.update_one({"url": url}, {"$set": {"crawled": False}, "$inc": {"retries": 1}})
     
     except ConnectionFailure:
         logging.info("[URL FAIL]: CosmosDB connection failed.")
