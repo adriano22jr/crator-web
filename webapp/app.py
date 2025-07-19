@@ -17,6 +17,7 @@ def setup_crawl():
     max_exec_time = flask.request.form["max-execution-time"]
     concurrent_workers = flask.request.form["concurrent-workers"]
     start_url = flask.request.form["start-url"]
+    marketplace = flask.request.form["marketplace"]
     
     
     # function_url = f"https://{FUNCTION_APP_HOSTNAME}/api/crawling_setup?code=gmv-M9j3bjoXCseX09yuAOV6TYk7l_jViQUeKTR_jUjHAzFuzd-PXQ%3D%3D"
@@ -26,7 +27,8 @@ def setup_crawl():
         "max_workers": concurrent_workers,
         "max_depth": crawler_depth,
         "max-links": max_links,
-        "max-execution-time": max_exec_time
+        "max-execution-time": max_exec_time,
+        "marketplace": marketplace
     }
 
     headers = {

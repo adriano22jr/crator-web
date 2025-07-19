@@ -48,6 +48,7 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
     try:
         req_body = req.get_json()
         root_url = req_body.get("root_url")
+        marketplace = req_body.get("marketplace")
         max_workers = int(req_body.get("max_workers", 1))
         max_depth = int(req_body.get("max_depth", 3))
         max_links = int(req_body.get("max-links"))
@@ -86,6 +87,7 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
         entity = {
             "PartitionKey": "Config",
             "RowKey": "GlobalSettings",
+            "marketplace": marketplace,
             "max_workers": max_workers,
             "max_depth": max_depth,
             "max_links": max_links,
@@ -155,6 +157,7 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     max_depth = int(entity["max_depth"])
     max_exec_time = int(entity["max_exec_time"])
     max_links = int(entity["max_links"])
+    marketplace = str(entity["marketplace"])
     
     setup_url_database()
     create_storage_container("crawling-results")
@@ -163,7 +166,7 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     url_insert(decoded_message, 0)
 
     logging.info(f"Starting orchestration with {max_workers} workers.")
-    instance_id = await client.start_new("orchestrator_function", None, {"start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(), "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_exec_time": max_exec_time, "max_links": max_links})
+    instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_exec_time": max_exec_time, "max_links": max_links})
     logging.info(f"Launched orchestration with ID = '{instance_id}'.")
 
 @app.orchestration_trigger(context_name = "context")
@@ -171,6 +174,7 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
     try:
         instance_id = context.instance_id
         input_data = context.get_input()
+        marketplace = input_data.get("marketplace")
         max_workers = input_data.get("max_workers")
         max_depth = input_data.get("max_depth")
         max_exec_time = input_data.get("max_exec_time")
@@ -227,7 +231,7 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
                 logging.info(f"[ORCHESTRATOR {instance_id}]: launching url_processor_function workers for {len(url_to_crawl)} URLs... (Limited by max_links: {remaining_links} remaining)")            
         
             try:
-                crawl_tasks = [context.call_activity("url_processor_function", msg) for msg in urls_to_process]
+                crawl_tasks = [context.call_activity("url_processor_function", {"url": msg, "marketplace": marketplace}) for msg in urls_to_process]
                 crawl_results = yield context.task_all(crawl_tasks)
 
                 if not context.is_replaying:
@@ -352,9 +356,12 @@ def queue_reader_function(inputdata: dict) -> list:
         logging.info(f"[QUEUE-READER ACTIVITY]: No messages found in queue {queue_name}.")
         return []
      
-@app.activity_trigger(input_name = "message")
-def url_processor_function(message: str) -> str:
-    logging.info(f"[URL-CRAWLER ACTIVITY]: Processing URL: {message}")
+@app.activity_trigger(input_name = "inputdata")
+def url_processor_function(inputdata: dict) -> str:
+    logging.info(f"[URL-CRAWLER ACTIVITY]: Processing URL: {inputdata.get('url')}")
+    
+    message = inputdata.get("url")
+    marketplace = inputdata.get("marketplace")
     
     data = json.loads(message)
     url = data.get("url")
@@ -373,17 +380,48 @@ def url_processor_function(message: str) -> str:
     try:
         logging.info(f"[URL-CRAWLER ACTIVITY]: Scraping url: {url}")
         
+        db = mongo_client["cookies"]
+        marketplaces = db["marketplaces"]
+
+        marketplace_db = marketplaces.find_one({"name": marketplace})
+        use_cookies = marketplace_db.get("cookie")
+        
         start_time = time.time()
         start_time_db = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        response = requests.get(url, proxies = local_proxy)
-        logging.info(f"[URL-CRAWLER ACTIVITY]: Successfully got a response from TOR server.")
+        
+        final_response = None
+        
+        if use_cookies:
+            logging.info(f"[URL-CRAWLER ACTIVITY]: Using cookies for {marketplace} marketplace.")
+            cookie_list = marketplace_db.get("cookie_list")
+            
+            for cookie in cookie_list:
+                try:
+                    cookies = {cookie["name"]: cookie["value"]}
+                    logging.info(f"[URL-CRAWLER ACTIVITY]: Trying with cookie: {cookies}")
+                    response = requests.get(url, proxies = local_proxy, cookies = cookies)
+
+                    if response.status_code == 200:
+                        logging.info(f"[URL-CRAWLER ACTIVITY]: Success with cookie {cookies}")
+                        final_response = response
+                        break
+                    else:
+                        logging.warning(f"[URL-CRAWLER ACTIVITY]: Received status {response.status_code} with cookie {cookies}")
+                except Exception as inner_e:
+                    logging.warning(f"[URL-CRAWLER ACTIVITY]: Cookie attempt failed: {inner_e}")
+        else:
+            logging.info(f"[URL-CRAWLER ACTIVITY]: Marketplace {marketplace} does not require cookies.")
+            response = requests.get(url, proxies = local_proxy)
+            logging.info(f"[URL-CRAWLER ACTIVITY]: Successfully got a response from TOR server.")
+            final_response = response
+   
         elapsed_time = time.time() - start_time
         
         update_crawled(url, elapsed_time, start_time_db)
         logging.info(f"[URL-CRAWLER ACTIVITY]: Uploading HTML content to storage...")
-        upload_html("cocoriko-market", f"level-{depth}/{hashlib.sha256(url.encode('utf-8')).hexdigest()}.html", response.text, "crawling-results")
+        upload_html(f"{marketplace}", f"level-{depth}/{hashlib.sha256(url.encode('utf-8')).hexdigest()}.html", final_response.text, "crawling-results")
         
-        extracted_links = extract_internal_links(response)
+        extracted_links = extract_internal_links(final_response)
         logging.info(f"[URL-CRAWLER ACTIVITY]: Found {len(extracted_links)} internal links.")
         
         return {"url": url, "extracted_links": extracted_links}
