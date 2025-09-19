@@ -52,7 +52,6 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
         max_workers = int(req_body.get("max_workers", 1))
         max_depth = int(req_body.get("max_depth", 3))
         max_links = int(req_body.get("max-links"))
-        max_execution_time = int(req_body.get("max-execution-time"))
        
         if not root_url:
             return func.HttpResponse("Missing root_url", status_code = 400)
@@ -90,8 +89,7 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
             "marketplace": marketplace,
             "max_workers": max_workers,
             "max_depth": max_depth,
-            "max_links": max_links,
-            "max_exec_time": max_execution_time
+            "max_links": max_links
         }
         table_client.upsert_entity(entity, mode = UpdateMode.REPLACE)
         logging.info("Configuration saved in Table Storage.")
@@ -155,7 +153,6 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     entity = config_table.get_entity(partition_key = "Config", row_key = "GlobalSettings")
     max_workers = int(entity["max_workers"])
     max_depth = int(entity["max_depth"])
-    max_exec_time = int(entity["max_exec_time"])
     max_links = int(entity["max_links"])
     marketplace = str(entity["marketplace"])
     
@@ -166,7 +163,7 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     url_insert(decoded_message, 0)
 
     logging.info(f"Starting orchestration with {max_workers} workers.")
-    instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_exec_time": max_exec_time, "max_links": max_links})
+    instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
     logging.info(f"Launched orchestration with ID = '{instance_id}'.")
 
 @app.orchestration_trigger(context_name = "context")
@@ -177,14 +174,13 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
         marketplace = input_data.get("marketplace")
         max_workers = input_data.get("max_workers")
         max_depth = input_data.get("max_depth")
-        max_exec_time = input_data.get("max_exec_time")
         max_links = input_data.get("max_links")
         
         counter = input_data.get("counter", 0)
         
         if not context.is_replaying:
             logging.info(f"[ORCHESTRATOR {instance_id}]: Starting orchestrator {instance_id}...")
-            logging.info(f"[ORCHESTRATOR {instance_id}]: Info received from config table: max_workers: {max_workers}, max_depth: {max_depth}, max_exec_time: {max_exec_time}, max_links: {max_links}")
+            logging.info(f"[ORCHESTRATOR {instance_id}]: Info received from config table: max_workers: {max_workers}, max_depth: {max_depth}, max_links: {max_links}")
             
         if not context.is_replaying:
             logging.info(f"[ORCHESTRATOR {instance_id}]: setup_crawling_env completed.")
