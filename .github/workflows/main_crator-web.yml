@@ -2,7 +2,7 @@
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 # More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
 
-name: Build and deploy Python app to Azure Web App - crator-web
+name: Build and deploy Python app to Azure Web App - serverless-crator
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Python version
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Create and start virtual environment
         run: |
@@ -46,7 +46,7 @@ jobs:
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
-          name: crator-webapp
+          name: serverless-crator
           path: |
             webapp/release.zip    
             !venv/
@@ -65,7 +65,7 @@ jobs:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: crator-webapp
+          name: serverless-crator
 
       - name: Unzip artifact for deployment
         run: unzip release.zip
@@ -82,6 +82,6 @@ jobs:
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
-          app-name: 'crator-web'
+          app-name: 'serverless-crator'
           slot-name: 'Production'
           
