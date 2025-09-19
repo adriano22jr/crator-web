@@ -21,20 +21,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python version
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      # - name: Set up Python version
+        # uses: actions/setup-python@v5
+        # with:
+          # python-version: '3.11'
 
-      - name: Create and start virtual environment
-        run: |
-          python -m venv venv
-          source venv/bin/activate
+      # - name: Create and start virtual environment
+        # run: |
+          # python -m venv venv
+          # source venv/bin/activate
       
-      - name: Install Web App dependencies
-        run: |
-          cd webapp
-          pip install -r requirements.txt
+      # - name: Install Web App dependencies
+        # run: |
+          # cd webapp
+          # pip install -r requirements.txt
         
       # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
 
