@@ -45,6 +45,9 @@ def local_test(req: func.HttpRequest) -> func.HttpResponse:
 def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Setup Function triggered.")
 
+    print(STORAGE_CONNECTION_STRING)
+    print(COSMOS_CONNECTION_STRING)
+
     try:
         req_body = req.get_json()
         root_url = req_body.get("root_url")

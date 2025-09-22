@@ -3,7 +3,7 @@ import flask, requests, app_config, json, os
 app = flask.Flask(__name__, template_folder = "template_files", static_folder = "static_files")
 
 
-# FUNCTION_APP_HOSTNAME = os.getenv("functionapp_hostname")
+SETUP_FUNCTION_URL = os.getenv("setup_function_url")
 
 @app.route('/', methods = ["GET", "POST"])
 def index():
@@ -19,8 +19,6 @@ def setup_crawl():
     marketplace = flask.request.form["marketplace"]
     
     
-    # function_url = f"https://{FUNCTION_APP_HOSTNAME}/api/crawling_setup?code=gmv-M9j3bjoXCseX09yuAOV6TYk7l_jViQUeKTR_jUjHAzFuzd-PXQ%3D%3D"
-    function_url = ""
     payload = {
         "root_url": start_url,
         "max_workers": concurrent_workers,
@@ -34,11 +32,11 @@ def setup_crawl():
     }
     
     # Testing payload input
-    return flask.jsonify(payload)
+        # return flask.jsonify(payload)
 
-    # request to azure function app
-        # response = requests.post(function_url, data = json.dumps(payload), headers = headers)
-        # return response.text
+    # Request to azure function app
+    response = requests.post(SETUP_FUNCTION_URL, data = json.dumps(payload), headers = headers)
+    return response.text
 
 if __name__ == "__main__":
     app.run(port = 8080, debug = True)
