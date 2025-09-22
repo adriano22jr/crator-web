@@ -162,9 +162,13 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     decoded_message = azqueue.get_body().decode("utf-8")
     url_insert(decoded_message, 0)
 
-    logging.info(f"Starting orchestration with {max_workers} workers.")
-    instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
-    logging.info(f"Launched orchestration with ID = '{instance_id}'.")
+    # Testing function app before orchestration
+    logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
+
+    # Production code to start orchestration
+        # logging.info(f"Testing function app with {max_workers} workers.")
+        # instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
+        # logging.info(f"Launched orchestration with ID = '{instance_id}'.")
 
 @app.orchestration_trigger(context_name = "context")
 def orchestrator_function(context: df.DurableOrchestrationContext):
