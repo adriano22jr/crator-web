@@ -1,9 +1,10 @@
-import flask, requests, app_config, json, os
+import flask, requests, json, os, httpx, asyncio, threading
 
 app = flask.Flask(__name__, template_folder = "template_files", static_folder = "static_files")
 
 
 SETUP_FUNCTION_URL = os.getenv("setup_function_url")
+STARTER_FUNCTION_URL = os.getenv("starter_function_url")
 
 @app.route('/', methods = ["GET", "POST"])
 def index():
@@ -36,7 +37,17 @@ def setup_crawl():
 
     # Request to azure function app
     response = requests.post(SETUP_FUNCTION_URL, data = json.dumps(payload), headers = headers)
+    if response.status_code == 200:
+        threading.Thread(target = lambda: asyncio.run(fire_and_forget(STARTER_FUNCTION_URL, payload))).start()
     return response.text
+
+
+async def fire_and_forget(function_url, payload):
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(function_url, json=payload, timeout=0.1)
+        except httpx.ReadTimeout:
+            pass
 
 if __name__ == "__main__":
     app.run(port = 8080, debug = True)

@@ -98,14 +98,13 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
         logging.info("Configuration saved in Table Storage.")
 
         # First message goes in queue-0 and init message in queue-init
-        queue_client_clear = QueueClient.from_connection_string(conn_str=STORAGE_CONNECTION_STRING, queue_name = f"{QUEUE_PREFIX}0", message_encode_policy=None)
+        queue_client_clear = QueueClient.from_connection_string(conn_str = STORAGE_CONNECTION_STRING, queue_name = f"{QUEUE_PREFIX}0", message_encode_policy=None)
         first_message = json.dumps({"url": root_url, "depth": 0})
         queue_client_clear.send_message(first_message, visibility_timeout = 2)
         logging.info(f"Inserted root URL into queue-0: {root_url}")
         
-        queue_client = queue_service.get_queue_client("queue-init")
-        init_message = json.dumps(root_url)
-        queue_client.send_message(init_message, visibility_timeout = 2)
+        queue_client_init = QueueClient.from_connection_string(conn_str = STORAGE_CONNECTION_STRING, queue_name = "queue-init", message_decode_policy = None)
+        result = queue_client_init.send_message(root_url, visibility_timeout = 2)
         logging.info(f"Inserted init message into queue-init.")
         
         return func.HttpResponse("Setup completed successfully!", status_code = 200)
@@ -147,11 +146,13 @@ def crawling_clean(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Errore: {str(e)}")
         return func.HttpResponse(f"Error: {str(e)}", status_code = 500)
 
-@app.queue_trigger(arg_name = "azqueue", queue_name = "queue-init", connection = "AzureWebJobsStorage", ) 
+# @app.queue_trigger(arg_name = "azqueue", queue_name = "queue-init", connection = "AzureWebJobsStorage") 
+@app.route(route = "crawling_starter")
 @app.durable_client_input(client_name = "client")
-async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
+async def crawling_starter(req: func.HttpRequest, client) -> func.HttpResponse:
     table_service = TableServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
     config_table = table_service.get_table_client(TABLE_NAME)
+    queue_client = QueueClient.from_connection_string(conn_str = STORAGE_CONNECTION_STRING, queue_name = "queue-init", message_decode_policy = None)
     
     entity = config_table.get_entity(partition_key = "Config", row_key = "GlobalSettings")
     max_workers = int(entity["max_workers"])
@@ -162,16 +163,23 @@ async def crawling_starter(azqueue: func.QueueMessage, client) -> None:
     setup_url_database()
     create_storage_container("crawling-results")
     
-    decoded_message = azqueue.get_body().decode("utf-8")
+    message = queue_client.receive_message()
+    decoded_message = message.content
+    if isinstance(decoded_message, bytes):
+        decoded_message = decoded_message.decode("utf-8")  
+        
     url_insert(decoded_message, 0)
 
     # Testing function app before orchestration
-    logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
-
+        # logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
+        # logging.info(f"Testing URL insertion for root URL: {decoded_message}")
+    
     # Production code to start orchestration
-        # logging.info(f"Testing function app with {max_workers} workers.")
-        # instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
-        # logging.info(f"Launched orchestration with ID = '{instance_id}'.")
+    logging.info(f"Testing function app with {max_workers} workers.")
+    instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
+    logging.info(f"Launched orchestration with ID = '{instance_id}'.")
+    
+    return func.HttpResponse(f"Function executed successfully.", status_code = 200)
 
 @app.orchestration_trigger(context_name = "context")
 def orchestrator_function(context: df.DurableOrchestrationContext):
