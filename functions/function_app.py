@@ -171,13 +171,13 @@ async def crawling_starter(req: func.HttpRequest, client) -> func.HttpResponse:
     url_insert(decoded_message, 0)
 
     # Testing function app before orchestration
-        # logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
-        # logging.info(f"Testing URL insertion for root URL: {decoded_message}")
+    logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
+    logging.info(f"Testing URL insertion for root URL: {decoded_message}")
     
     # Production code to start orchestration
-    logging.info(f"Testing function app with {max_workers} workers.")
-    instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
-    logging.info(f"Launched orchestration with ID = '{instance_id}'.")
+        # logging.info(f"Testing function app with {max_workers} workers.")
+        # instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
+        # logging.info(f"Launched orchestration with ID = '{instance_id}'.")
     
     return func.HttpResponse(f"Function executed successfully.", status_code = 200)
 

@@ -4,3 +4,22 @@ $(document).ready(function(){
         document.getElementById("hidden-start-url").value = startUrlValue;
     });
 });
+
+$(document).ready(function(){
+    $("#btn-marketplaces").click(function(){
+        $("#marketplaces-card").show();
+        $("#crawl-card").hide();
+    });
+
+    $("#btn-crawl").click(function(){
+        $("#crawl-card").show();
+        $("#marketplaces-card").hide();
+    });
+});
+
+$(document).ready(function(){
+    $("#switch-has-cookie").change(function(){
+        const isChecked = $(this).prop('checked');
+        $('#has-cookie-value').val(isChecked);
+    });
+});

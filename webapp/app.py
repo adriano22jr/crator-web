@@ -1,7 +1,6 @@
-import flask, requests, json, os, httpx, asyncio, threading
+import flask, requests, json, os, httpx, asyncio, threading, storage_functionalities
 
 app = flask.Flask(__name__, template_folder = "template_files", static_folder = "static_files")
-
 
 SETUP_FUNCTION_URL = os.getenv("setup_function_url")
 STARTER_FUNCTION_URL = os.getenv("starter_function_url")
@@ -10,7 +9,40 @@ STARTER_FUNCTION_URL = os.getenv("starter_function_url")
 def index():
     return flask.render_template('index.html')
 
+@app.route('/storage-results', methods = ["GET", "POST"])
+def storage_results():
+    return flask.jsonify({"message": "Storage results endpoint"})
 
+@app.route('/mongodb-results', methods = ["GET", "POST"])
+def mongodb_results():
+    marketplaces = storage_functionalities.get_marketplaces()
+    return flask.render_template('mongo.html', marketplaces = marketplaces)
+
+@app.route('/add-marketplace', methods = ["GET", "POST"])
+def add_marketplace():
+    marketplace_name = flask.request.form["new-marketplace-name"]
+    cookies = flask.request.form["new-cookies"]
+    has_cookies = flask.request.form["has-cookie-value"]
+    
+    storage_functionalities.add_marketplace(marketplace_name, has_cookies, cookies)
+    return flask.redirect('/mongodb-results')
+
+@app.route('/add-cookie', methods = ["GET", "POST"])
+def add_cookie():
+    marketplace_name = flask.request.form["marketplace-name"]
+    cookie_name = flask.request.form["cookie-name"]
+    cookie_value = flask.request.form["cookie-value"]
+    
+    storage_functionalities.add_cookie_to_marketplace(marketplace_name, cookie_name, cookie_value)
+    return flask.redirect('/mongodb-results')
+
+@app.route('/remove-cookie', methods = ["GET", "POST"])
+def remove_cookie():
+    marketplace_name = flask.request.form["marketplace-name"]
+    cookie_name = flask.request.form["cookie-name"]
+    
+    storage_functionalities.remove_cookie_from_marketplace(marketplace_name, cookie_name)
+    return flask.redirect('/mongodb-results')
 @app.route('/setup-crawl', methods = ["GET", "POST"])
 def setup_crawl():
     crawler_depth = flask.request.form["crawler-depth"]
@@ -40,7 +72,6 @@ def setup_crawl():
     if response.status_code == 200:
         threading.Thread(target = lambda: asyncio.run(fire_and_forget(STARTER_FUNCTION_URL, payload))).start()
     return response.text
-
 
 async def fire_and_forget(function_url, payload):
     async with httpx.AsyncClient() as client:
