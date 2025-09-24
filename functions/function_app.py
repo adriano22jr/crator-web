@@ -168,7 +168,7 @@ async def crawling_starter(req: func.HttpRequest, client) -> func.HttpResponse:
     if isinstance(decoded_message, bytes):
         decoded_message = decoded_message.decode("utf-8")  
         
-    url_insert(decoded_message, 0)
+    url_insert(decoded_message, 0, marketplace)
 
     # Testing function app before orchestration
     logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
@@ -255,7 +255,8 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
                 "results": crawl_results,
                 "depth": queue_index,
                 "max_depth": max_depth,
-                "current_counter": counter
+                "current_counter": counter,
+                "marketplace": marketplace
             })
             
             has_failures = postprocess_result.get("has_failures")
@@ -294,6 +295,7 @@ def postprocess_results(inputdata):
     depth = inputdata["depth"]
     max_depth = inputdata["max_depth"]
     current_counter = inputdata.get("current_counter")
+    marketplace = inputdata.get("marketplace")
     
     queue_name = f"{QUEUE_PREFIX}{depth + 1}"
     queue_client = QueueClient.from_connection_string(
@@ -329,7 +331,7 @@ def postprocess_results(inputdata):
                         visibility_timeout = 1
                     )
                     logging.info(f"[POST-PROCESS ACTIVITY]: Inserted URL into queue {queue_name}: {new_url}")
-                    inserted_url = url_insert(new_url, depth + 1)
+                    inserted_url = url_insert(new_url, depth + 1, marketplace)
                     
                     create_edge(url_id, str(inserted_url))
         else:
@@ -524,13 +526,14 @@ def create_edge(source_id: str, target_id: str, db_name: str = "url_db", collect
     except OperationFailure as e:
         logging.info(f"[CREATE EDGE]: Error: {e}")
 
-def url_insert(url: str, depth: int, db_name: str = "url_db", collection_name: str = "urls"):
+def url_insert(url: str, depth: int, marketplace, db_name: str = "url_db", collection_name: str = "urls"):
     try:
         db = mongo_client[db_name]
         collection = db[collection_name]
 
         logging.info(f"[URL INSERT]: URL {url} does not exist in the database, creating entry...")
         result = collection.insert_one({"url": url, 
+                               "marketplace": marketplace,
                                "depth": depth, 
                                "crawled": False, 
                                "hash_url": hashlib.sha256(url.encode('utf-8')).hexdigest(),
