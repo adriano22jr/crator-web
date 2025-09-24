@@ -36,6 +36,17 @@ def add_marketplace(marketplace_name, has_cookies, cookies):
     collection.insert_one(new_marketplace)
     client.close()
     
+def get_marketplace_results(marketplace_name):
+    client = pymongo.MongoClient(MONGODB_CONNECTION_STRING)
+    
+    db = client['url_db']
+    collection = db['urls']
+    
+    results = list(collection.find({"marketplace": marketplace_name}))
+    
+    client.close()
+    return results
+    
 def remove_marketplace(marketplace_name):
     pass
 

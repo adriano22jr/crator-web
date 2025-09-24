@@ -18,6 +18,14 @@ def mongodb_results():
     marketplaces = storage_functionalities.get_marketplaces()
     return flask.render_template('mongo.html', marketplaces = marketplaces)
 
+@app.route('/marketplace-results', methods = ["GET", "POST"])
+def marketplace_results():
+    marketplace_name = flask.request.form["marketplace-name"]
+
+    results = storage_functionalities.get_marketplace_results(marketplace_name)
+    marketplaces = storage_functionalities.get_marketplaces()
+    return flask.render_template('mongo.html', results = results, marketplaces = marketplaces)
+
 @app.route('/add-marketplace', methods = ["GET", "POST"])
 def add_marketplace():
     marketplace_name = flask.request.form["new-marketplace-name"]

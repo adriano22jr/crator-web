@@ -13,7 +13,7 @@
     </div>
 
     <div class = "d-flex justify-content-center mt-3">
-        <div id = "marketplaces-card">
+        <div id = "marketplaces-card" class = "mb-5" style = "display: none;">
             <div class="mb-4 border p-3 rounded" style = "width: 450px;">
                 <h5 style="color: #333A41;">Add New Marketplace</h5>
                 <form action = "/add-marketplace" method = "POST">
@@ -88,8 +88,42 @@
             </div>
         </div>
 
-        <div id = "crawl-card" style = "display: none;">
-            <p>Qui va la lista dei risultati del crawl...</p>
+        <div id = "crawl-card" class = "mb-5" style = "display: none;">
+            <div class="d-flex gap-2 mb-3 justify-content-center">
+                {% for mp in marketplaces %}
+                    <form action = "/marketplace-results" method = "POST" style="margin:0">
+                        <input type="hidden" name="marketplace-name" value="{{ mp.name }}">
+                        <button class="webapp-button btn">{{ mp.name }}</button>
+                    </form>
+                {% endfor %}
+            </div>
+
+            <table id="crawlTable" class="table table-striped table-bordered table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Hash URL</th>
+                        <th>Depth</th>
+                        <th>Crawled</th>
+                        <th>Inserted At</th>
+                        <th>Downloaded At</th>
+                        <th>Download Time</th>
+                        <th>Retries</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in results %}
+                    <tr>
+                        <td>{{ item.hash_url }}</td>
+                        <td>{{ item.depth }}</td>
+                        <td>{{ item.crawled }}</td>
+                        <td>{{ item.inserted_at }}</td>
+                        <td>{{ item.downloaded_at }}</td>
+                        <td>{{ item.download_time }}</td>
+                        <td>{{ item.retries }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 

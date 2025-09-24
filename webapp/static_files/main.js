@@ -23,3 +23,15 @@ $(document).ready(function(){
         $('#has-cookie-value').val(isChecked);
     });
 });
+
+$(document).ready(function() {
+    $('#crawlTable').DataTable({
+        "pageLength": 25,      
+        "order": [[4, "desc"]],
+        "lengthMenu": [10, 25, 50, 100],
+        "columnDefs": [
+            { "orderable": false, "targets": [] }
+        ], 
+        "searching": false
+    });
+});
