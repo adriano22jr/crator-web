@@ -11,7 +11,17 @@ def index():
 
 @app.route('/storage-results', methods = ["GET", "POST"])
 def storage_results():
-    return flask.jsonify({"message": "Storage results endpoint"})
+    structure = storage_functionalities.get_storage_structure()
+    return flask.render_template('storage.html', structure = structure)
+
+@app.route('/download/<marketplace>/<level>/<filename>', methods = ["GET", "POST"])
+def download_file(marketplace, level, filename):
+    content = storage_functionalities.get_blob_content(marketplace, level, filename)
+    return flask.Response(
+        content,
+        mimetype="application/octet-stream",
+        headers={"Content-Disposition": f"attachment;filename={filename}"}
+    )
 
 @app.route('/mongodb-results', methods = ["GET", "POST"])
 def mongodb_results():

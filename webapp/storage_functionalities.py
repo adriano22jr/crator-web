@@ -1,4 +1,5 @@
 import os, pymongo
+from azure.storage.blob import BlobServiceClient
 
 STORAGE_CONNECTION_STRING = os.getenv("storage_connection_string")
 MONGODB_CONNECTION_STRING = os.getenv("mongodb_connection_string")
@@ -79,3 +80,28 @@ def remove_cookie_from_marketplace(marketplace_name, cookie_name):
         collection.update_one({"name": marketplace_name}, {"$set": {"cookie": False}})
     
     client.close()
+    
+def get_storage_structure():
+    blob_service_client = BlobServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
+    container = blob_service_client.get_container_client("crawling-results")
+    
+    blobs = container.list_blobs()
+    structure = {}
+
+    for blob in blobs:
+        parts = blob.name.split("/")
+        if len(parts) >= 3:  # marketplace/depth/file
+            marketplace, depth, filename = parts[0], parts[1], parts[2]
+            structure.setdefault(marketplace, {}).setdefault(depth, []).append(filename)
+            
+    return structure
+
+def get_blob_content(marketplace, depth, filename):
+    blob_service_client = BlobServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
+    container = blob_service_client.get_container_client("crawling-results")
+    
+    blob_path = f"{marketplace}/{depth}/{filename}"
+    blob_client = container.get_blob_client(blob_path)
+    
+    content = blob_client.download_blob().readall()
+    return content
