@@ -97,11 +97,11 @@ def crawling_setup(req: func.HttpRequest) -> func.HttpResponse:
         # First message goes in queue-0 and init message in queue-init
         queue_client_clear = QueueClient.from_connection_string(conn_str = STORAGE_CONNECTION_STRING, queue_name = f"{QUEUE_PREFIX}0", message_encode_policy=None)
         first_message = json.dumps({"url": root_url, "depth": 0})
-        queue_client_clear.send_message(first_message, visibility_timeout = 2)
+        queue_client_clear.send_message(first_message, visibility_timeout = 0)
         logging.info(f"Inserted root URL into queue-0: {root_url}")
         
         queue_client_init = QueueClient.from_connection_string(conn_str = STORAGE_CONNECTION_STRING, queue_name = "queue-init", message_decode_policy = None)
-        result = queue_client_init.send_message(root_url, visibility_timeout = 2)
+        result = queue_client_init.send_message(root_url, visibility_timeout = 0)
         logging.info(f"Inserted init message into queue-init.")
         
         return func.HttpResponse("Setup completed successfully!", status_code = 200)
@@ -143,7 +143,6 @@ def crawling_clean(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Errore: {str(e)}")
         return func.HttpResponse(f"Error: {str(e)}", status_code = 500)
 
-# @app.queue_trigger(arg_name = "azqueue", queue_name = "queue-init", connection = "AzureWebJobsStorage") 
 @app.route(route = "crawling_starter")
 @app.durable_client_input(client_name = "client")
 async def crawling_starter(req: func.HttpRequest, client) -> func.HttpResponse:
@@ -160,21 +159,21 @@ async def crawling_starter(req: func.HttpRequest, client) -> func.HttpResponse:
     setup_url_database()
     create_storage_container("crawling-results")
     
-    message = queue_client.receive_message()
-    decoded_message = message.content
-    if isinstance(decoded_message, bytes):
-        decoded_message = decoded_message.decode("utf-8")  
-        
-    url_insert(decoded_message, 0, marketplace)
+    messages = queue_client.receive_messages()
+    for msg in messages:
+        message = msg.content
+        queue_client.delete_message(msg)
+
+    url_insert(message, 0, marketplace)
 
     # Testing function app before orchestration
-    logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
-    logging.info(f"Testing URL insertion for root URL: {decoded_message}")
+        # logging.info(f"Testing function app with {max_workers} workers, {max_depth} depth, and {max_links} links on marketplace: {marketplace}.")
+        # logging.info(f"Testing URL insertion for root URL: {message}")
     
     # Production code to start orchestration
-        # logging.info(f"Testing function app with {max_workers} workers.")
-        # instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
-        # logging.info(f"Launched orchestration with ID = '{instance_id}'.")
+    logging.info(f"Testing function app with {max_workers} workers.")
+    instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
+    logging.info(f"Launched orchestration with ID = '{instance_id}'.")
     
     return func.HttpResponse(f"Function executed successfully.", status_code = 200)
 
@@ -198,7 +197,8 @@ def orchestrator_function(context: df.DurableOrchestrationContext):
             logging.info(f"[ORCHESTRATOR {instance_id}]: setup_crawling_env completed.")
         
         queue_index = 0
-        while queue_index <= max_depth:            
+        while queue_index <= max_depth:   
+            logging.info(f"[ORCHESTRATOR {instance_id}]: Current counter: {counter}")         
             if counter >= max_links:
                 logging.warning(f"[ORCHESTRATOR {instance_id}]: Max links limit of {max_links} reached. Current count: {counter}. Terminating orchestration.")
                 break
@@ -395,13 +395,14 @@ def url_processor_function(inputdata: dict) -> str:
 
         marketplace_db = marketplaces.find_one({"name": marketplace})
         use_cookies = marketplace_db.get("cookie")
+        boolean_val = use_cookies.lower() == "true"
         
         start_time = time.time()
         start_time_db = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
         final_response = None
         
-        if use_cookies:
+        if boolean_val:
             logging.info(f"[URL-CRAWLER ACTIVITY]: Using cookies for {marketplace} marketplace.")
             cookie_list = marketplace_db.get("cookie_list")
             

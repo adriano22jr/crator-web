@@ -24,9 +24,9 @@ def add_marketplace(marketplace_name, has_cookies, cookies):
         try:
             cookies = eval(cookies)
         except:
-            cookies = {}
+            cookies = None
     else:
-        cookies = {}
+        cookies = None
     
     new_marketplace = {
         "name": marketplace_name,
