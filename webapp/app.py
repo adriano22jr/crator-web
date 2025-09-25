@@ -45,6 +45,13 @@ def add_marketplace():
     storage_functionalities.add_marketplace(marketplace_name, has_cookies, cookies)
     return flask.redirect('/mongodb-results')
 
+@app.route('/remove-marketplace', methods = ["GET", "POST"])
+def remove_marketplace():
+    marketplace_name = flask.request.form["marketplace-name"]
+    
+    storage_functionalities.remove_marketplace(marketplace_name)
+    return flask.redirect('/mongodb-results')
+
 @app.route('/add-cookie', methods = ["GET", "POST"])
 def add_cookie():
     marketplace_name = flask.request.form["marketplace-name"]
@@ -61,6 +68,7 @@ def remove_cookie():
     
     storage_functionalities.remove_cookie_from_marketplace(marketplace_name, cookie_name)
     return flask.redirect('/mongodb-results')
+
 @app.route('/setup-crawl', methods = ["GET", "POST"])
 def setup_crawl():
     crawler_depth = flask.request.form["crawler-depth"]

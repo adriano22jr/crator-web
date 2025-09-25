@@ -49,7 +49,13 @@ def get_marketplace_results(marketplace_name):
     return results
     
 def remove_marketplace(marketplace_name):
-    pass
+    client = pymongo.MongoClient(MONGODB_CONNECTION_STRING)
+    
+    db = client['cookies']
+    collection = db['marketplaces']
+    
+    collection.delete_one({"name": marketplace_name})
+    client.close()
 
 def add_cookie_to_marketplace(marketplace_name, cookie_name, cookie_value):
     client = pymongo.MongoClient(MONGODB_CONNECTION_STRING)
