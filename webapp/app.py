@@ -95,9 +95,14 @@ def setup_crawl():
 
     # Request to azure function app
     response = requests.post(SETUP_FUNCTION_URL, data = json.dumps(payload), headers = headers)
-    if response.status_code == 200:
-        threading.Thread(target = lambda: asyncio.run(fire_and_forget(STARTER_FUNCTION_URL, payload))).start()
-    return response.text
+    if response.status_code != 200: return response.text, 500
+    
+    response_starter = requests.post(STARTER_FUNCTION_URL, data = json.dumps(payload), headers = headers)
+    if response_starter.status_code == 200:
+        return flask.redirect(flask.url_for("index", instance_id = response_starter.text))
+    
+    return response_starter.text, 500
+
 
 async def fire_and_forget(function_url, payload):
     async with httpx.AsyncClient() as client:
