@@ -14,6 +14,7 @@ app = df.DFApp(http_auth_level = func.AuthLevel.FUNCTION)
 # Storage connection
 STORAGE_CONNECTION_STRING = os.getenv("AzureWebJobsStorage")
 COSMOS_CONNECTION_STRING = os.getenv("CosmosDBConnectionString")
+PROXY_URL = os.getenv("proxy_url")
 QUEUE_PREFIX = "queue-"
 TABLE_NAME = "crawlerconfig"
 
@@ -383,8 +384,8 @@ def url_processor_function(inputdata: dict) -> str:
     }
     
     proxies = {
-        'http': 'socks5h://tor-proxy.gentlesea-22ce755d.northeurope.azurecontainerapps.io:9050',
-        'https': 'socks5h://tor-proxy.gentlesea-22ce755d.northeurope.azurecontainerapps.io:9050'
+        'http': f'socks5h://{PROXY_URL}:9050',
+        'https': f'socks5h://{PROXY_URL}:9050'
     }
 
     try:
@@ -410,7 +411,7 @@ def url_processor_function(inputdata: dict) -> str:
                 try:
                     cookies = {cookie["name"]: cookie["value"]}
                     logging.info(f"[URL-CRAWLER ACTIVITY]: Trying with cookie: {cookies}")
-                    response = requests.get(url, proxies = local_proxy, cookies = cookies)
+                    response = requests.get(url, proxies = proxies, cookies = cookies)
 
                     if response.status_code == 200:
                         logging.info(f"[URL-CRAWLER ACTIVITY]: Success with cookie {cookies}")
@@ -422,7 +423,7 @@ def url_processor_function(inputdata: dict) -> str:
                     logging.warning(f"[URL-CRAWLER ACTIVITY]: Cookie attempt failed: {inner_e}")
         else:
             logging.info(f"[URL-CRAWLER ACTIVITY]: Marketplace {marketplace} does not require cookies.")
-            response = requests.get(url, proxies = local_proxy)
+            response = requests.get(url, proxies = proxies)
             logging.info(f"[URL-CRAWLER ACTIVITY]: Successfully got a response from TOR server.")
             final_response = response
    
