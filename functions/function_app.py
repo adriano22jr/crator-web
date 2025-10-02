@@ -176,7 +176,7 @@ async def crawling_starter(req: func.HttpRequest, client) -> func.HttpResponse:
     instance_id = await client.start_new("orchestrator_function", None, {"marketplace": marketplace, "counter": 0, "max_workers": max_workers, "max_depth": max_depth, "max_links": max_links})
     logging.info(f"Launched orchestration with ID = '{instance_id}'.")
     
-    return func.HttpResponse(instance_id, status_code = 200)
+    return func.HttpResponse(f"Function executed successfully.", status_code = 200)
 
 @app.orchestration_trigger(context_name = "context")
 def orchestrator_function(context: df.DurableOrchestrationContext):
