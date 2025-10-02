@@ -9,3 +9,4 @@ azure-data-tables
 azure-storage-blob
 beautifulsoup4
 pymongo
+PySocks
